@@ -221,7 +221,7 @@ template <
     typename                    epilogue_op_t,      ///< Epilogue operation applied to update matrix C
     int                         LdgAlignC,          ///< Alignment of C elements in bytes
     bool                        AllowRaggedTiles>   ///< Boolean to indicate whether AllowRaggedTiles handling is enabled
-__global__ void kernel(param_pack<value_t, accum_t, epilogue_op_t> pack)
+__global__ void gemm_kernel(param_pack<value_t, accum_t, epilogue_op_t> pack)
 {
     // Parameterize task type
     typedef typename gemm_block_task<
@@ -250,9 +250,52 @@ __global__ void kernel(param_pack<value_t, accum_t, epilogue_op_t> pack)
         pack.m,
         pack.n,
         pack.k,
-        pack.k_split).run();
+        pack.k_split).run_mad();
 }
 
+template <
+    math_operation_class_t      math_op,            ///< Indicates which class of math operation to select
+    typename                    block_task_policy_t,  ///< Parameterization of block_task_policy
+    matrix_transform_t::kind_t  TransformA,         ///< Transformation op for matrix A
+    int                         LdgAlignA,          ///< Alignment of A matrix elements in bytes
+    matrix_transform_t::kind_t  TransformB,         ///< Transformation op for matrix B
+    int                         LdgAlignB,          ///< Alignment of B matrix elements in bytes
+    typename                    value_t,            ///< Multiplicand value type (matrices A and B)
+    typename                    accum_t,            ///< Accumulator value type (matrix C and scalars)
+    typename                    epilogue_op_t,      ///< Epilogue operation applied to update matrix C
+    int                         LdgAlignC,          ///< Alignment of C elements in bytes
+    bool                        AllowRaggedTiles>   ///< Boolean to indicate whether AllowRaggedTiles handling is enabled
+__global__ void srgemm_kernel(param_pack<value_t, accum_t, epilogue_op_t> pack)
+{
+    // Parameterize task type
+    typedef typename gemm_block_task<
+        math_op,
+        block_task_policy_t,
+        value_t,
+        accum_t,
+        TransformA,
+        LdgAlignA,
+        TransformB,
+        LdgAlignB,
+        epilogue_op_t,
+        LdgAlignC,
+        AllowRaggedTiles>::type block_task_t;
+
+    // Declare statically-allocated shared storage
+    __shared__ typename block_task_t::scratch_storage_t smem;
+
+    // Construct and run the task
+    block_task_t(
+        &smem,
+        pack.d_a,
+        pack.d_b,
+        pack.d_c,
+        pack.epilogue_op,
+        pack.m,
+        pack.n,
+        pack.k,
+        pack.k_split).run_minsum();
+}
 
 /******************************************************************************
  * Launch configuration description returned to the caller
@@ -505,7 +548,7 @@ launch_configuration device_gemm(
         static const bool AllowRaggedTiles = true;
 
         return dispatch<math_op, block_task_policy_t, TransformA, LdgAlignA, TransformB, LdgAlignB, value_t, accum_t, epilogue_op_t, LdgAlignC, AllowRaggedTiles>(
-            kernel<math_op,block_task_policy_t, TransformA, LdgAlignA, TransformB, LdgAlignB, value_t, accum_t, epilogue_op_t, LdgAlignC, AllowRaggedTiles>,
+            gemm_kernel<math_op,block_task_policy_t, TransformA, LdgAlignA, TransformB, LdgAlignB, value_t, accum_t, epilogue_op_t, LdgAlignC, AllowRaggedTiles>,
             m,
             n,
             k,
@@ -522,7 +565,7 @@ launch_configuration device_gemm(
         static const bool AllowRaggedTiles = false;
 
         return dispatch<math_op, block_task_policy_t, TransformA, LdgAlignA, TransformB, LdgAlignB, value_t, accum_t, epilogue_op_t, LdgAlignC, AllowRaggedTiles>(
-            kernel<math_op,block_task_policy_t, TransformA, LdgAlignA, TransformB, LdgAlignB, value_t, accum_t, epilogue_op_t, LdgAlignC, AllowRaggedTiles>,
+            gemm_kernel<math_op,block_task_policy_t, TransformA, LdgAlignA, TransformB, LdgAlignB, value_t, accum_t, epilogue_op_t, LdgAlignC, AllowRaggedTiles>,
             m,
             n,
             k,
@@ -533,10 +576,77 @@ launch_configuration device_gemm(
             stream,
             debug_synchronous);
     }
-
-
 }
 
+/**
+ * Computes srgemm on device matrices
+ */
+template <
+    tiling_strategy::kind_t      TilingStrategy,    ///< Tile-sizing classification
+    math_operation_class_t      math_op,        ///< Indicates which class of math operation to select
+    matrix_transform_t::kind_t  TransformA,     ///< Transformation op for matrix A
+    int                         LdgAlignA,      ///< Alignment (in bytes) of A operand
+    matrix_transform_t::kind_t  TransformB,     ///< Transformation op for matrix B
+    int                         LdgAlignB,      ///< Alignment (in bytes) of B operand
+    typename                    value_t,        ///< Multiplicand value type (matrices A and B)
+    typename                    accum_t,        ///< Accumulator value type (matrix C and scalars)
+    typename                    epilogue_op_t,  ///< Epilogue operation to update matrix C
+    int                         LdgAlignC>      ///< Alignment (in bytes) of C operand
+launch_configuration device_srgemm(
+    int             m,                          ///< Height in rows of op(A) and C
+    int             n,                          ///< Width in columns of op(B) and C
+    int             k,                          ///< Width in columns of op(A) and height in rows of op(B)
+    epilogue_op_t   epilogue_op,                ///< Epilogue operation to update matrix C
+    value_t         *d_a,                       ///< Device pointer to matrix A array values
+    value_t         *d_b,                       ///< Device pointer to matrix B array values
+    accum_t         *d_c,                       ///< Device pointer to matrix C array values
+    cudaStream_t    stream = 0,                 ///< CUDA stream to launch kernels within.  Default is stream<sub>0</sub>.
+    bool            debug_synchronous = false)  ///< Whether or not to synchronize the stream after every kernel launch to
+                                                ///  check for errors.  Also causes launch configurations to be printed to
+                                                ///  the console if DEBUG is defined.  Default is \p false.
+{
+    // Parameterize an task policy type
+    // (TODO: use a policy dispatch mechanism based upon SM version)
+    typedef gemm_policy<value_t, accum_t, TransformA, TransformB, TilingStrategy> block_task_policy_t;
+
+    // AllowRaggedTiles-tile check
+    if ((m % block_task_policy_t::BlockItemsY != 0) ||
+        (n % block_task_policy_t::BlockItemsX != 0) ||
+        (k % block_task_policy_t::BlockItemsK != 0))
+    {
+        // Needs ragged tile-handling
+        static const bool AllowRaggedTiles = true;
+
+        return dispatch<math_op, block_task_policy_t, TransformA, LdgAlignA, TransformB, LdgAlignB, value_t, accum_t, epilogue_op_t, LdgAlignC, AllowRaggedTiles>(
+            srgemm_kernel<math_op,block_task_policy_t, TransformA, LdgAlignA, TransformB, LdgAlignB, value_t, accum_t, epilogue_op_t, LdgAlignC, AllowRaggedTiles>,
+            m,
+            n,
+            k,
+            epilogue_op,
+            d_a,
+            d_b,
+            d_c,
+            stream,
+            debug_synchronous);
+    }
+    else
+    {
+        // Does not need ragged tile-handling
+        static const bool AllowRaggedTiles = false;
+
+        return dispatch<math_op, block_task_policy_t, TransformA, LdgAlignA, TransformB, LdgAlignB, value_t, accum_t, epilogue_op_t, LdgAlignC, AllowRaggedTiles>(
+            srgemm_kernel<math_op,block_task_policy_t, TransformA, LdgAlignA, TransformB, LdgAlignB, value_t, accum_t, epilogue_op_t, LdgAlignC, AllowRaggedTiles>,
+            m,
+            n,
+            k,
+            epilogue_op,
+            d_a,
+            d_b,
+            d_c,
+            stream,
+            debug_synchronous);
+    }
+}
 
 } // namespace gemm
 } // namespace cutlass

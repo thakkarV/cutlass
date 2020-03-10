@@ -545,6 +545,56 @@ struct block_task
         k_split.signal();
     }
 
+    __forceinline__ __device__
+    void epilogue_noop()
+    {
+        // Wait for predecessor thread block(s) to produce block-wide tile of
+        // exclsuive partial-sums
+        k_split.wait();
+
+        // Configure epilogue as to whether the thread block is a secondary
+        // accumulator in an inter-block k-splitting scheme
+        if (k_split.is_secondary_accumulator())
+            epilogue_op.set_secondary_accumulator();
+
+        // Whether the addend from C needs loading
+        bool must_init_addend = epilogue_op.must_init_addend();
+
+        #pragma unroll
+        for (int x = 0; x < ThreadItemsX; ++x)
+        {
+            #pragma unroll
+            for (int y = 0; y < ThreadItemsY; y += LdsVectorDpVectorsA)
+            {
+                int thread_strip_b = x / LdsVectorDpVectorsB;
+                int thread_strip_a = y / LdsVectorDpVectorsA;
+
+                int thread_item_coords_tile_x = thread_strip_offset_b + (thread_strip_b * WarpThreadsX * LdsVectorDpVectorsB) + (x % LdsVectorDpVectorsB);
+                int thread_item_coords_tile_y = thread_strip_offset_a + (thread_strip_a * WarpThreadsY * LdsVectorDpVectorsA) + (y % LdsVectorDpVectorsA);
+
+                int c_idx = (grid_raster.block_item_coords.x + thread_item_coords_tile_x) * dim_m +
+                    grid_raster.block_item_coords.y + thread_item_coords_tile_y;
+
+                accum_t *my_c = d_c + c_idx;
+
+                #pragma unroll
+                for (int i = 0; i < LdsVectorDpVectorsA; ++i)
+                {
+                    accum_t *c_ptr = my_c + i;
+                    if ((grid_raster.block_item_coords.x + thread_item_coords_tile_x) < dim_n &&
+                        (grid_raster.block_item_coords.y + thread_item_coords_tile_y + i) < dim_m)
+                    {
+                        accum_t c_slice = accumulator.get(x, y + i);
+                        stg_cg(c_ptr, c_slice);
+                    }
+                }
+            }
+        }
+
+        // Signal k-split successor thread_block that we have produced our block-wide
+        // tile of inclusive partial-sums
+        k_split.signal();
+    }
 
     //-------------------------------------------------------------------------
     // Tile consumption
@@ -662,6 +712,10 @@ struct block_task
         }
     }
 
+    //-------------------------------------------------------------------------
+    // GEMM API
+    //-------------------------------------------------------------------------
+
     __forceinline__ __device__
     void run_mad()
     {
@@ -772,22 +826,9 @@ struct block_task
         consume_tile_minsum<false>();
 
         //
-        // Eplilogue not needed in min after sum
+        // Eplilogue not needed in min after sum, just do a store to global memory
         //
-        epilogue();
-    }
-
-    //-------------------------------------------------------------------------
-    // GEMM API
-    //-------------------------------------------------------------------------
-
-    /**
-     * Compute GEMM
-     */
-    __forceinline__ __device__
-    void run()
-    {
-        run_minsum();
+        epilogue_noop();
     }
 };
 

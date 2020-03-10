@@ -569,4 +569,3 @@ int main(int argc, const char **argv)
 
     return test_error;
 }
-

@@ -138,6 +138,13 @@ bin/sgemm_$(TRANSPOSE)_$(BIN_SUFFIX) : gemm.cu $(DEPS)
 	mkdir -p bin
 	$(NVCC) -DTEST_SGEMM $(DEFINES) $(SM_TARGETS) -o $@ gemm.cu $(NVCCFLAGS) $(CPU_ARCH) $(INC) $(LIBINC) $(LIBS)
 
+
+srgemm: bin/srgemm_$(TRANSPOSE)_$(BIN_SUFFIX)
+
+bin/srgemm_$(TRANSPOSE)_$(BIN_SUFFIX) : srgemm.cu $(DEPS)
+	mkdir -p bin
+	$(NVCC) -DTEST_SGEMM $(DEFINES) $(SM_TARGETS) -o $@ srgemm.cu $(NVCCFLAGS) $(CPU_ARCH) $(INC) $(LIBINC) $(LIBS)
+
 #-------------------------------------------------------------------------------
 # make dgemm
 #-------------------------------------------------------------------------------
