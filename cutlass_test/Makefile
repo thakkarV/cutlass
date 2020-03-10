@@ -86,7 +86,7 @@ else ifeq (tt, $(TRANSPOSE))
 	DEFINES += -DTRANSPOSE_B
 endif
 
-NVCCFLAGS += -std=c++11
+NVCCFLAGS += -std=c++11 --expt-relaxed-constexpr
 
 
 #-------------------------------------------------------------------------------
@@ -177,4 +177,3 @@ wgemm: bin/wgemm_$(TRANSPOSE)_$(BIN_SUFFIX)
 bin/wgemm_$(TRANSPOSE)_$(BIN_SUFFIX) : gemm.cu $(DEPS)
 	mkdir -p bin
 	$(NVCC) -DTEST_WGEMM -DWMMA $(DEFINES) $(SM_TARGETS) -o $@ gemm.cu $(NVCCFLAGS) $(CPU_ARCH) $(INC) $(LIBINC) $(LIBS)
-

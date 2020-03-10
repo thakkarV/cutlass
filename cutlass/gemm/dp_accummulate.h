@@ -84,6 +84,18 @@ struct dp_accummulate
     /// Single-component "dp1" dot-product vector type
     typedef value_t dp_vector_t;
 
+    __forceinline__ __device__
+    static void minsum(
+        accum_t &d,
+        const value_t &a,
+        const value_t &b,
+        const accum_t &c)
+    {
+        value_t tmp = a + b;
+        if (tmp < c) {
+            d = tmp;
+        }
+    }
 
     /// Compute "dp1" float->float
     inline __device__
@@ -220,4 +232,3 @@ struct dp_accummulate<
 
 } // namespace gemm
 } // namespace cutlass
-

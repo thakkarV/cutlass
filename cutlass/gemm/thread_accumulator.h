@@ -35,6 +35,7 @@
 #include "../util/util.h"
 #include "dp_accummulate.h"
 
+#include <limits>
 
 namespace cutlass {
 namespace gemm {
@@ -138,6 +139,20 @@ protected:
             accumulators[y][x]);
     }
 
+    inline __device__
+    void minsum_xy(
+        dp_vector_t (&tile_a)[ThreadItemsY],
+        dp_vector_t (&tile_b)[ThreadItemsX],
+        int x,
+        int y)
+    {
+        dp_accum_traits_t::minsum(
+            accumulators[y][x],
+            tile_a[y],
+            tile_b[x],
+            accumulators[y][x]);
+    }
+
 public:
 
     //-------------------------------------------------------------------------
@@ -175,6 +190,18 @@ public:
         }
     }
 
+    inline __device__
+    void init_inf()
+    {
+        #pragma unroll
+        for (int y = 0; y < ThreadItemsY; ++y) {
+            #pragma unroll
+            for (int x = 0; x < ThreadItemsX; ++x)
+            {
+                accumulators[y][x] = std::numeric_limits<accum_t>::infinity();
+            }
+        }
+    }
 
     /**
      * Retrieve the accumulator at thread tile coordinates (x, y)
@@ -204,6 +231,27 @@ public:
             for (int x = 0; x < ThreadItemsX; ++x)
             {
                 mad_xy(tile_a, tile_b, x, y);
+            }
+        }
+    }
+
+    /**
+     * \brief Compute the product of tile_a and tile_b and add the result to
+     * the tile of accumulators.
+     */
+    inline __device__
+    void min_after_sum(
+        dp_vector_t (&tile_a)[ThreadItemsY],
+        dp_vector_t (&tile_b)[ThreadItemsX])
+    {
+        // Simply traverse the accumulator tile in row-major order
+        #pragma unroll
+        for (int y = 0; y < ThreadItemsY; ++y)
+        {
+            #pragma unroll
+            for (int x = 0; x < ThreadItemsX; ++x)
+            {
+                minsum_xy(tile_a, tile_b, x, y);
             }
         }
     }

@@ -172,12 +172,12 @@ struct block_task
 
         /// Number of dp_vector_t along M-axis that can be read in a single LDS from the shared A-tile (up to 128b if more than one value_t)
         LdsVectorDpVectorsA = __NV_STD_MIN(
-            ThreadItemsY, 
+            ThreadItemsY,
             __NV_STD_MAX(1, (128 / (__NV_STD_MAX(sizeof(dp_vector_t), sizeof(accum_t)) * 8)))),
 
         /// Number of dp_vector_t along N-axis that can be read in a single LDS from the shared B-tile (up to 128b if more than one value_t)
         LdsVectorDpVectorsB = __NV_STD_MIN(
-            ThreadItemsX, 
+            ThreadItemsX,
             __NV_STD_MAX(1, (128 / (__NV_STD_MAX(sizeof(dp_vector_t), sizeof(accum_t)) * 8)))),
 
         /// Number of strip-mined LDS vector reads from shared A-tile
@@ -227,6 +227,7 @@ struct block_task
         grid_raster_t;
 
 
+    // SEE HERE: shmem block loader template stamps
     /// Tile loader type for matrix A
     typedef block_loader<
             BlockThreads,                                       // BlockThreads
@@ -397,6 +398,7 @@ struct block_task
     //-------------------------------------------------------------------------
 
     /// Constructor
+    // SEE HERE: for block overall operation structure entry point
     inline __device__
     block_task(
         scratch_storage_t *scratch,
@@ -551,6 +553,7 @@ struct block_task
     /**
      * Consume a tile of A and B each
      */
+    // SEE HERE: overall shmem block load, consume, shmem writeback
     template <bool DoGlobalPrefetch>
     __forceinline__ __device__
     void consume_tile()
@@ -605,16 +608,62 @@ struct block_task
         }
     }
 
-
-    //-------------------------------------------------------------------------
-    // GEMM API
-    //-------------------------------------------------------------------------
-
-    /**
-     * Compute GEMM
-     */
+    template <bool DoGlobalPrefetch>
     __forceinline__ __device__
-    void run()
+    void consume_tile_minsum()
+    {
+        // Unroll BlockDpVectorsK iterations of outer-product accumulations
+        #pragma unroll
+        for (int tile_offset_k = 0; tile_offset_k < BlockDpVectorsK; tile_offset_k += 1)
+        {
+            // Last strip commits global prefetch for next tile
+            if ((tile_offset_k == BlockDpVectorsK - 1) && DoGlobalPrefetch)
+            {
+                // If not using two pages of scratch tiles, protect the above prefetch loads from the committing writes below
+                if (!UseDoubleScratchTiles)
+                    __syncthreads();
+
+                // If using two pages of scratch tiles, switch to next page before writing
+                if (UseDoubleScratchTiles)
+                {
+                    page_idx = (page_idx ? 0 : 1);
+                }
+
+                // Commit global prefetch data to scratch page
+                loader_a.commit(scratch->pages[page_idx].block_a);
+                loader_b.commit(scratch->pages[page_idx].block_b);
+
+                __syncthreads();
+            }
+
+            // Request local prefetch for next strip
+            request_local_prefetch(
+                local_slices_a[(tile_offset_k + 1) % 2],
+                local_slices_b[(tile_offset_k + 1) % 2],
+                (tile_offset_k + 1) % BlockDpVectorsK);
+
+            // Request global prefetch for next tile on first strip
+            if ((tile_offset_k == 0) && DoGlobalPrefetch)
+            {
+                loader_b.request();
+                loader_b.next();
+                loader_a.request();
+                loader_a.next();
+            }
+
+            // Cast strip-mined loads to contiguous array of dp_vector_t
+            typedef dp_vector_t thread_tile_a_t[ThreadLdsVectorsA * LdsVectorDpVectorsA];
+            typedef dp_vector_t thread_tile_b_t[ThreadLdsVectorsB * LdsVectorDpVectorsB];
+            thread_tile_a_t &thread_tile_a = reinterpret_cast<thread_tile_a_t&>(local_slices_a[(tile_offset_k) % 2]);
+            thread_tile_b_t &thread_tile_b = reinterpret_cast<thread_tile_b_t&>(local_slices_b[(tile_offset_k) % 2]);
+
+            // Accumulate this dp-stripe product
+            accumulator.min_after_sum(thread_tile_a, thread_tile_b);
+        }
+    }
+
+    __forceinline__ __device__
+    void run_mad()
     {
         // Quit if the thread block is fully out-of-bounds
         if (grid_raster.is_block_oob(dim_m, dim_n))
@@ -669,6 +718,76 @@ struct block_task
         //
 
         epilogue();
+    }
+
+    __forceinline__ __device__
+    void run_minsum()
+    {
+        // Quit if the thread block is fully out-of-bounds
+        if (grid_raster.is_block_oob(dim_m, dim_n))
+        {
+            asm volatile("exit;");
+        }
+
+        // Request global prefetch of first tile
+        loader_a.request();
+        loader_a.next();
+        loader_b.request();
+        loader_b.next();
+
+        // Commit global prefetch of first tile to shared memory
+        loader_a.commit(scratch->pages[page_idx].block_a);
+        loader_b.commit(scratch->pages[page_idx].block_b);
+
+        // Advance to next A,B tiles in K-axis
+        block_item_coords_k += BlockItemsK;
+
+        // Synchronize shared tiles and prepared accumulator
+        __syncthreads();
+
+        // Initialize thread's slice of accumulators
+        accumulator.init_inf();
+
+        // Request first iteration of local prefetch strips
+        request_local_prefetch(
+            local_slices_a[0],
+            local_slices_b[0],
+            0);
+
+        //
+        // Main loop
+        //
+
+        // Consume tiles in A and B along the K-axis (all but last tile)
+        #pragma unroll 1
+        while (block_item_coords_k < block_end_item_k)
+        {
+            consume_tile_minsum<true>();
+
+            // Advance to next A,B tiles in K-axis
+            block_item_coords_k += BlockItemsK;
+        }
+
+        // Consume last tile
+        consume_tile_minsum<false>();
+
+        //
+        // Eplilogue not needed in min after sum
+        //
+        epilogue();
+    }
+
+    //-------------------------------------------------------------------------
+    // GEMM API
+    //-------------------------------------------------------------------------
+
+    /**
+     * Compute GEMM
+     */
+    __forceinline__ __device__
+    void run()
+    {
+        run_minsum();
     }
 };
 
