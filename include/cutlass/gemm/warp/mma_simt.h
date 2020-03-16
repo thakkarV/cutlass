@@ -69,7 +69,9 @@ template <
   /// Number of partitions along K dimension
   int PartitionsK = 1,
   /// Used for partial specialization
-  typename Enable = bool
+  typename Enable = bool,
+  /// Set of semi-ring operations to be used for MMA
+  typename SemiRingOperator_ = arch::OpMultiplyAdd
 >
 class MmaSimt {
 public:
@@ -100,6 +102,9 @@ public:
   /// Indicates class of matrix operator
   using OperatorClass = arch::OpClassSimt;
 
+  /// Underlying thread MMA semi-ring operation set
+  using SemiRingOperator = SemiRingOperator_;
+  
   using ThreadLayoutA = typename platform::conditional< platform::is_same< layout::ColumnMajorInterleaved<4>, LayoutA >::value,
                   layout::ColumnMajor,
                   typename platform::conditional < platform::is_same< layout::RowMajorInterleaved<4>, LayoutA >::value,
@@ -133,7 +138,7 @@ public:
     ThreadLayoutB,
     ElementC,
     LayoutC,
-    arch::OpMultiplyAdd,
+    SemiRingOperator,
     dp4a_type
   >;
 
