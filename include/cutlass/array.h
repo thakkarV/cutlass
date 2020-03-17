@@ -31,6 +31,7 @@
 #include "cutlass/cutlass.h"
 #include "cutlass/numeric_types.h"
 
+#include <limits>
 namespace cutlass {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -355,6 +356,12 @@ public:
     fill(T(0));
   }
 
+  /// Efficient clear method to infinity
+  CUTLASS_HOST_DEVICE
+  void clear_inf() {
+    fill(std::numeric_limits<T>::infinity());
+  }
+
   CUTLASS_HOST_DEVICE
   reference at(size_type pos) {
     return reinterpret_cast<reference>(storage[pos]);
@@ -518,4 +525,3 @@ public:
 } // namespace cutlass
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-
