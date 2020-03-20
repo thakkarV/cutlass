@@ -59,7 +59,7 @@ template <
   /// Layout of C matrix (concept: MatrixLayout)
   typename LayoutC,
   /// Concept: arch::OpMultiplyAdd or arch::Mma<>
-  typename Operator = arch::OpMultiplyAdd,
+  typename Operator,
   /// Used for partial specialization
   typename Enable = bool
 >

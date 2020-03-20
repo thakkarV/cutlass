@@ -392,6 +392,30 @@ struct Mma<gemm::GemmShape<1, 1, 1>, 1, float, LayoutA, float, LayoutB, float, L
   }
 };
 
+template <
+  /// Layout of A matrix
+  typename LayoutA,
+  /// Layout of B matrix
+  typename LayoutB,
+  /// Layout of C matrix
+  typename LayoutC
+>
+struct Mma<gemm::GemmShape<1, 1, 1>, 1, double, LayoutA, double, LayoutB, double, LayoutC, OpSumMin> {
+
+  using Shape = gemm::GemmShape<1, 1, 1>;
+
+  CUTLASS_HOST_DEVICE
+  void operator()(
+    Array<double, 1> &d,
+    Array<double, 1> const &a,
+    Array<double, 1> const &b,
+    Array<double, 1> const &c
+  ) {
+    d[0] = ((a[0] + b[0]) < c[0]) 
+      ? (a[0] + b[0])
+      : c[0];
+  }
+};
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 

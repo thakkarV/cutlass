@@ -216,9 +216,11 @@ struct DefaultMmaCore<Shape_, WarpShape_, GemmShape<1, 1, 1>, ElementA_,
     ElementB,     /// Data type of B elements
     SmemLayoutB,  /// Layout of B matrix (concept: MatrixLayout)
     ElementC,     /// Element type of C matrix
-    LayoutC,      /// Layout of C matrix (concept: MatrixLayout)
-    Policy        /// Policy describing warp-level MmaSimtOp (concept: MmaSimtOp policy)
-    >;            /// Used for partial specialization
+    LayoutC,      /// Layout of C matrix (concept: MatrixLayout)  
+    Policy,       /// Policy describing warp-level MmaSimtOp (concept: MmaSimtOp policy)
+    1,            /// Number of partitions along K dimension    
+    Operator
+    >;
 
   /// Policy used to define MmaPipelined
   using MmaPolicy = MmaPolicy<
@@ -383,7 +385,9 @@ struct DefaultMmaCore<Shape_, WarpShape_, GemmShape<1, 1, 1>, ElementA_,
       SmemLayoutB,    /// Layout of B matrix (concept: MatrixLayout)
       ElementC,       /// Element type of C matrix
       LayoutC,        /// Layout of C matrix (concept: MatrixLayout)
-      Policy          /// Policy describing warp-level MmaSimtOp (concept: MmaSimtOp policy)
+      Policy,         /// Policy describing warp-level MmaSimtOp (concept: MmaSimtOp policy)
+      1,              /// Number of partitions along K dimension
+      Operator
   >;
 
   /// Policy used to define MmaPipelined 
@@ -545,7 +549,9 @@ struct DefaultMmaCore<Shape_, WarpShape_, GemmShape<1, 1, 1>, ElementA_,
       SmemLayoutB,  /// Layout of B matrix (concept: MatrixLayout)
       ElementC,     /// Element type of C matrix
       LayoutC,      /// Layout of C matrix (concept: MatrixLayout)
-      Policy        /// Policy describing warp-level MmaSimtOp (concept: MmaSimtOp policy)
+      Policy,       /// Policy describing warp-level MmaSimtOp (concept: MmaSimtOp policy)
+      1,            /// Number of partitions along K dimension
+      Operator
   >;
 
   /// Policy used to define MmaPipelined 
@@ -707,7 +713,9 @@ struct DefaultMmaCore<Shape_, WarpShape_, GemmShape<1, 1, 1>, ElementA_,
       SmemLayoutB,  /// Layout of B matrix (concept: MatrixLayout)
       ElementC,     /// Element type of C matrix
       LayoutC,      /// Layout of C matrix (concept: MatrixLayout)
-      Policy        /// Policy describing warp-level MmaSimtOp (concept: MmaSimtOp policy)
+      Policy,       /// Policy describing warp-level MmaSimtOp (concept: MmaSimtOp policy)
+      1,            /// Number of partitions along K dimension
+      Operator
   >;
 
   /// Policy used to define MmaPipelined 
@@ -861,7 +869,8 @@ struct DefaultMmaCore<Shape_, WarpShape_, GemmShape<1, 1, 4>, int8_t,
     ElementC,     /// Element type of C matrix
     LayoutC,      /// Layout of C matrix (concept: MatrixLayout)
     Policy,       /// Policy describing warp-level MmaSimtOp (concept: MmaSimtOp policy)
-    PartitionsK   /// Number of partitions along K dimension
+    PartitionsK,  /// Number of partitions along K dimension
+    Operator
     >;
 
   /// Policy used to define MmaPipelined
@@ -1021,7 +1030,8 @@ struct DefaultMmaCore<Shape_, WarpShape_, GemmShape<1, 1, 4>, int8_t,
     ElementC,     /// Element type of C matrix
     LayoutC,      /// Layout of C matrix (concept: MatrixLayout)
     Policy,       /// Policy describing warp-level MmaSimtOp (concept: MmaSimtOp policy)
-    PartitionsK   /// Number of partitions along K dimension
+    PartitionsK,  /// Number of partitions along K dimension
+    Operator
     >;
 
   static int const kPaddingM = detail::simt_transpose_padding(kWarpSize, Shape::kK, sizeof_bits<ElementA>::value);
@@ -1180,7 +1190,8 @@ struct DefaultMmaCore<Shape_, WarpShape_, GemmShape<1, 1, 4>, int8_t,
     ElementC,     /// Element type of C matrix
     LayoutC,      /// Layout of C matrix (concept: MatrixLayout)
     Policy,       /// Policy describing warp-level MmaSimtOp (concept: MmaSimtOp policy)
-    PartitionsK   /// Number of partitions along K dimension
+    PartitionsK,  /// Number of partitions along K dimension
+    Operator
     >;
 
   static int const kPaddingM = detail::simt_transpose_padding(kWarpSize, Shape::kK, sizeof_bits<ElementA>::value);
@@ -1340,7 +1351,8 @@ struct DefaultMmaCore<Shape_, WarpShape_, GemmShape<1, 1, 4>, int8_t,
     ElementC,     /// Element type of C matrix
     LayoutC,      /// Layout of C matrix (concept: MatrixLayout)
     Policy,       /// Policy describing warp-level MmaSimtOp (concept: MmaSimtOp policy)
-    PartitionsK   /// Number of partitions along K dimension
+    PartitionsK,  /// Number of partitions along K dimension
+    Operator
     >;
 
   static int const kPaddingM = detail::simt_transpose_padding(kWarpSize, Shape::kK, sizeof_bits<ElementA>::value);

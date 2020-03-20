@@ -68,10 +68,10 @@ template <
   typename Policy_,
   /// Number of partitions along K dimension
   int PartitionsK = 1,
-  /// Used for partial specialization
-  typename Enable = bool,
   /// Set of semi-ring operations to be used for MMA
-  typename SemiRingOperator_ = arch::OpMultiplyAdd
+  typename SemiRingOperator_ = arch::OpMultiplyAdd,
+  /// Used for partial specialization
+  typename Enable = bool
 >
 class MmaSimt {
 public:
