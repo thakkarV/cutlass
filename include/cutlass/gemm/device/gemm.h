@@ -763,9 +763,7 @@ template <
     /// Operation performed by GEMM
     typename Operator_ = typename DefaultSrgemmConfiguration<
         OperatorClass_, ArchTag_, ElementA_, ElementB_, ElementC_,
-        ElementAccumulator_>::Operator,
-    /// Whether Beta is zero or not
-    bool IsBetaZero = false>
+        ElementAccumulator_>::Operator>
 class Srgemm {
  public:
 
@@ -793,7 +791,6 @@ class Srgemm {
   static int const kAlignmentB = AlignmentB;
   static int const kAlignmentC = EpilogueOutputOp::kCount;
   static bool const kSplitKSerial = SplitKSerial;
-  static bool const kIsBetaZero = IsBetaZero;
 
   /// Define the kernel
   using SrgemmKernel = typename cutlass::gemm::kernel::DefaultSrgemm<
@@ -815,8 +812,7 @@ class Srgemm {
     ThreadblockSwizzle,
     kStages,
     kSplitKSerial,
-    Operator,
-    kIsBetaZero
+    Operator
   >::SrgemmKernel;
 
   /// Argument structure
@@ -1077,15 +1073,13 @@ template <
     /// If true, kernel supports split-K as a serial reduction
     bool SplitKSerial,
     /// Operation performed by GEMM
-    typename Operator_,
-    /// Beta is zero or not
-    bool IsBetaZero>
+    typename Operator_>
 class Srgemm<ElementA_, LayoutA_, ElementB_, LayoutB_, ElementC_,
            layout::ColumnMajor,  // partially specialized on LayoutC
            ElementAccumulator_, OperatorClass_, ArchTag_, ThreadblockShape_,
            WarpShape_, InstructionShape_, EpilogueOutputOp_,
            ThreadblockSwizzle_, Stages, AlignmentA, AlignmentB, SplitKSerial,
-           Operator_, IsBetaZero> {
+           Operator_> {
  public:
 
   using ElementA = ElementA_;
@@ -1111,7 +1105,6 @@ class Srgemm<ElementA_, LayoutA_, ElementB_, LayoutB_, ElementC_,
   static int const kAlignmentA = AlignmentA;
   static int const kAlignmentB = AlignmentB;
   static bool const kSplitKSerial = SplitKSerial;
-  static bool const kIsBetaZero = IsBetaZero;
 
   using UnderlyingOperator = Srgemm<
     ElementB,
@@ -1132,8 +1125,7 @@ class Srgemm<ElementA_, LayoutA_, ElementB_, LayoutB_, ElementC_,
     kAlignmentB,
     kAlignmentA,
     SplitKSerial,
-    Operator,
-    kIsBetaZero
+    Operator
   >;
 
   using UnderlyingArguments = typename UnderlyingOperator::Arguments;

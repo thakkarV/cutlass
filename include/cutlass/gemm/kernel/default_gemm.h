@@ -154,9 +154,7 @@ template <
     /// epilogue
     bool SplitKSerial,
     /// Operation performed by GEMM
-    typename Operator = arch::OpSumMin,
-    /// Beta is zero or not
-    bool IsBetaZero = false>
+    typename Operator = arch::OpSumMin>
 struct DefaultSrgemm;
 
 ////////////////////////////////////////////////////////////////////////////////
