@@ -37,6 +37,7 @@
 #include "cutlass/gemm/gemm.h"
 #include "cutlass/epilogue/thread/linear_combination.h"
 #include "cutlass/epilogue/thread/linear_combination_clamp.h"
+#include "cutlass/epilogue/thread/min_op.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -110,9 +111,9 @@ template <
 struct DefaultSrgemmConfiguration<
   arch::OpClassSimt, 
   ArchTag,
-  ElementA, 
-  ElementB, 
-  ElementC, 
+  ElementA,
+  ElementB,
+  ElementC,
   ElementAccumulator> {
   
   static int const kAlignmentA = 1;
@@ -122,14 +123,7 @@ struct DefaultSrgemmConfiguration<
   using InstructionShape = GemmShape<1, 1, 1>;
   static int const kStages = 2;
 
-  // todo eliminate this to be just a noop epilogue
-  using EpilogueOutputOp = epilogue::thread::LinearCombination<
-    ElementC,
-    1,
-    ElementAccumulator,
-    ElementAccumulator
-  >;
-
+  using EpilogueOutputOp = epilogue::thread::MinOp<ElementC, 1>;
   using Operator = arch::OpSumMin;
 };
 
