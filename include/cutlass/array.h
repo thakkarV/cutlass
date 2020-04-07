@@ -356,10 +356,10 @@ public:
     fill(T(0));
   }
 
-  /// Efficient clear method to infinity
+  /// Efficient clear method
   CUTLASS_HOST_DEVICE
-  void clear_inf() {
-    fill(std::numeric_limits<T>::infinity());
+  void clear(T init_val) {
+    fill(init_val);
   }
 
   CUTLASS_HOST_DEVICE

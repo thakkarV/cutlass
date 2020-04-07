@@ -39,6 +39,8 @@
 #include "cutlass/gemm/kernel/default_gemm.h"
 #include "cutlass/gemm/device/default_gemm_configuration.h"
 
+#include <limits>
+
 ////////////////////////////////////////////////////////////////////////////////
 
 namespace cutlass {
@@ -828,6 +830,7 @@ class Srgemm {
     TensorRef<ElementC const, LayoutC> ref_C;
     TensorRef<ElementC, LayoutC> ref_D;
     typename EpilogueOutputOp::Params epilogue;
+    ElementAccumulator accum_init_val;
     int split_k_slices;
 
     //
@@ -850,6 +853,7 @@ class Srgemm {
       TensorRef<ElementC, LayoutC> ref_D_,
       typename EpilogueOutputOp::Params epilogue_ = 
         typename EpilogueOutputOp::Params(),
+      ElementAccumulator accum_init_val = std::numeric_limits<ElementAccumulator>::infinity(),
       int split_k_slices = 1
     ):
       problem_size(problem_size_),
@@ -858,6 +862,7 @@ class Srgemm {
       ref_C(ref_C_),
       ref_D(ref_D_),
       epilogue(epilogue_),
+      accum_init_val(accum_init_val),
       split_k_slices(split_k_slices) {
 
     }
@@ -955,6 +960,7 @@ public:
       args.ref_B.non_const_ref(),
       args.ref_C.non_const_ref(),
       args.ref_D,
+      args.accum_init_val,
       args.epilogue,
       static_cast<int *>(workspace)
     };
@@ -1145,6 +1151,7 @@ class Srgemm<ElementA_, LayoutA_, ElementB_, LayoutB_, ElementC_,
     TensorRef<ElementC const, LayoutC> ref_C;
     TensorRef<ElementC, LayoutC> ref_D;
     typename EpilogueOutputOp::Params epilogue;
+    ElementAccumulator accum_init_val;
     int split_k_slices;
 
     //
@@ -1165,6 +1172,7 @@ class Srgemm<ElementA_, LayoutA_, ElementB_, LayoutB_, ElementC_,
       TensorRef<ElementC, LayoutC> ref_D_,
       typename EpilogueOutputOp::Params epilogue_ = 
         typename EpilogueOutputOp::Params(),
+      ElementAccumulator accum_init_val = std::numeric_limits<ElementAccumulator>::infinity(),
       int split_k_slices = 1
     ):
       problem_size(problem_size_),
@@ -1173,6 +1181,7 @@ class Srgemm<ElementA_, LayoutA_, ElementB_, LayoutB_, ElementC_,
       ref_C(ref_C_),
       ref_D(ref_D_),
       epilogue(epilogue_),
+      accum_init_val(accum_init_val),
       split_k_slices(split_k_slices) { }
   };
 
@@ -1194,6 +1203,7 @@ public:
       {args.ref_C.data(), args.ref_C.stride(0)},
       {args.ref_D.data(), args.ref_D.stride(0)},
       args.epilogue,
+      args.accum_init_val,
       args.split_k_slices
     );
   }

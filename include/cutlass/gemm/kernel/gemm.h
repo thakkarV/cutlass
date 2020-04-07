@@ -338,7 +338,7 @@ struct Gemm {
 
 // SRGEMM specialization so that we clear accumulator to infinity
 template <
-  typename Srmma_,                  ///! Threadblock-scoped matrix multiply-accumulate 
+  typename Srmma_,                ///! Threadblock-scoped matrix multiply-accumulate 
   typename Epilogue_,             ///! Epilogue
   typename ThreadblockSwizzle_,   ///! Threadblock swizzling function
   bool SplitKSerial,              ///! If true, code supporting split-K via serial reduction is enabled.
@@ -369,6 +369,7 @@ struct Srgemm {
     typename Epilogue::OutputTileIterator::TensorRef ref_C;
     typename Epilogue::OutputTileIterator::Params params_D;
     typename Epilogue::OutputTileIterator::TensorRef ref_D;
+    typename OutputOp::Element accum_init_val;
     typename OutputOp::Params output_op;
     int *semaphore;
     int gemm_k_iterations;
@@ -389,6 +390,7 @@ struct Srgemm {
       typename Srmma::IteratorB::TensorRef ref_B,
       typename Epilogue::OutputTileIterator::TensorRef ref_C,
       typename Epilogue::OutputTileIterator::TensorRef ref_D,
+      typename OutputOp::Element accum_init_val,
       typename OutputOp::Params output_op = typename OutputOp::Params(),
       int *semaphore = nullptr
     ):
@@ -402,6 +404,7 @@ struct Srgemm {
       ref_C(ref_C),
       params_D(ref_D.layout()),
       ref_D(ref_D),
+      accum_init_val(accum_init_val),
       output_op(output_op),
       semaphore(semaphore) {
 
@@ -529,7 +532,7 @@ struct Srgemm {
     typename Srmma::FragmentC accumulators;
 
     // need to clear accumulators to infinity for SemiRing Gemm
-    accumulators.clear_inf();
+    accumulators.clear(params.accum_init_val);
 
     if (!kSplitKSerial || gemm_k_iterations > 0) {
       // Compute threadblock-scoped matrix multiply-add
