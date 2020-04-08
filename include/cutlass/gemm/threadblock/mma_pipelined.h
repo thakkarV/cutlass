@@ -134,6 +134,8 @@ protected:
   /// Iterator to write threadblock-scoped tile of B operand to shared memory
   SmemIteratorB smem_iterator_B_;
 
+  ElementC accum_init_val_;
+
 public:
 
   /// Construct from tensor references
@@ -142,11 +144,13 @@ public:
     typename Base::SharedStorage &shared_storage,       ///< Shared storage needed for internal use by threadblock-scoped GEMM
     int thread_idx,                                     ///< ID within the threadblock
     int warp_idx,                                       ///< ID of warp
-    int lane_idx                                        ///< ID of each thread within a warp
+    int lane_idx,                                       ///< ID of each thread within a warp
+    ElementC accum_init_val = ElementC(0)
   ):
     Base(shared_storage, thread_idx, warp_idx, lane_idx),
     smem_iterator_A_(shared_storage.operand_A_ref(), thread_idx),
-    smem_iterator_B_(shared_storage.operand_B_ref(), thread_idx) {
+    smem_iterator_B_(shared_storage.operand_B_ref(), thread_idx),
+    accum_init_val_(accum_init_val) {
 
     // Compute warp location within threadblock tile by mapping the warp_id to
     // three coordinates:
@@ -186,8 +190,8 @@ public:
     FragmentA tb_frag_A;
     FragmentB tb_frag_B;
 
-    tb_frag_A.clear();
-    tb_frag_B.clear();
+    tb_frag_A.clear(accum_init_val_);
+    tb_frag_B.clear(accum_init_val_);
 
     // The last kblock is loaded in the prolog
     iterator_A.load(tb_frag_A);

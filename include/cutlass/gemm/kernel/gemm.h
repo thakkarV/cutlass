@@ -527,7 +527,7 @@ struct Srgemm {
     //
 
     // Construct thread-scoped matrix multiply
-    Srmma srmma_thrblock_op(shared_storage.main_loop, thread_idx, warp_idx, lane_idx);
+    Srmma srmma_thrblock_op(shared_storage.main_loop, thread_idx, warp_idx, lane_idx, params.accum_init_val);
 
     typename Srmma::FragmentC accumulators;
 
