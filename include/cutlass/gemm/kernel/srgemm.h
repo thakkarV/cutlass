@@ -1,30 +1,9 @@
 /***************************************************************************************************
- * Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without modification, are permitted
- * provided that the following conditions are met:
- *     * Redistributions of source code must retain the above copyright notice, this list of
- *       conditions and the following disclaimer.
- *     * Redistributions in binary form must reproduce the above copyright notice, this list of
- *       conditions and the following disclaimer in the documentation and/or other materials
- *       provided with the distribution.
- *     * Neither the name of the NVIDIA CORPORATION nor the names of its contributors may be used
- *       to endorse or promote products derived from this software without specific prior written
- *       permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
- * FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL NVIDIA CORPORATION BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
- * BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
- * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
- * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *
+ * Copyright (c) 2020, Vijay Thakkar (thakkarv@gatech.edu).  All rights reserved.
  **************************************************************************************************/
 
 /*! \file
-    \brief Template for a pipelined GEMM kernel. Does not compute batching or support split-K.
+    \brief Template for a pipelined Semiring GEMM kernel. Does not compute batching or support split-K.
 */
 
 #pragma once
@@ -44,36 +23,40 @@ namespace kernel {
 
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
+// SemiRing Gemm kernel that support custom thread level MMA and init values.
 template <
-  typename Mma_,                  ///! Threadblock-scoped matrix multiply-accumulate 
+  typename Srmma_,                ///! Threadblock-scoped matrix multiply-accumulate 
   typename Epilogue_,             ///! Epilogue
   typename ThreadblockSwizzle_,   ///! Threadblock swizzling function
-  bool SplitKSerial               ///! If true, code supporting split-K via serial reduction is enabled.
+  bool SplitKSerial,              ///! If true, code supporting split-K via serial reduction is enabled.
+  typename Operator_ = cutlass::arch::OpSumMin
 >
-struct Gemm {
+struct Srgemm {
 
-  using Mma = Mma_;
+  using Srmma = Srmma_;
   using Epilogue = Epilogue_;
   using OutputOp = typename Epilogue::OutputOp;
   using ThreadblockSwizzle = ThreadblockSwizzle_;
+  using Operator = Operator_;
   static bool const kSplitKSerial = SplitKSerial;
 
   /// Warp count (concept: GemmShape)
-  using WarpCount = typename Mma::WarpCount;
+  using WarpCount = typename Srmma::WarpCount;
   static int const kThreadCount = 32 * WarpCount::kCount;
 
   /// Parameters structure
   struct Params {
     cutlass::gemm::GemmCoord problem_size;
     cutlass::gemm::GemmCoord grid_tiled_shape;
-    typename Mma::IteratorA::Params params_A;
-    typename Mma::IteratorA::TensorRef ref_A;
-    typename Mma::IteratorB::Params params_B;
-    typename Mma::IteratorB::TensorRef ref_B;
+    typename Srmma::IteratorA::Params params_A;
+    typename Srmma::IteratorA::TensorRef ref_A;
+    typename Srmma::IteratorB::Params params_B;
+    typename Srmma::IteratorB::TensorRef ref_B;
     typename Epilogue::OutputTileIterator::Params params_C;
     typename Epilogue::OutputTileIterator::TensorRef ref_C;
     typename Epilogue::OutputTileIterator::Params params_D;
     typename Epilogue::OutputTileIterator::TensorRef ref_D;
+    typename OutputOp::Element accum_init_val;
     typename OutputOp::Params output_op;
     int *semaphore;
     int gemm_k_iterations;
@@ -90,10 +73,11 @@ struct Gemm {
     Params(
       cutlass::gemm::GemmCoord const & problem_size,
       cutlass::gemm::GemmCoord const & grid_tiled_shape,
-      typename Mma::IteratorA::TensorRef ref_A,
-      typename Mma::IteratorB::TensorRef ref_B,
+      typename Srmma::IteratorA::TensorRef ref_A,
+      typename Srmma::IteratorB::TensorRef ref_B,
       typename Epilogue::OutputTileIterator::TensorRef ref_C,
       typename Epilogue::OutputTileIterator::TensorRef ref_D,
+      typename OutputOp::Element accum_init_val,
       typename OutputOp::Params output_op = typename OutputOp::Params(),
       int *semaphore = nullptr
     ):
@@ -107,19 +91,20 @@ struct Gemm {
       ref_C(ref_C),
       params_D(ref_D.layout()),
       ref_D(ref_D),
+      accum_init_val(accum_init_val),
       output_op(output_op),
       semaphore(semaphore) {
 
-      int total_gemm_k_iterations = (problem_size.k() + Mma::Shape::kK - 1) / Mma::Shape::kK;
+      int total_gemm_k_iterations = (problem_size.k() + Srmma::Shape::kK - 1) / Srmma::Shape::kK;
       int gemm_k_iterations = (total_gemm_k_iterations + grid_tiled_shape.k() - 1) / grid_tiled_shape.k();
       
-      gemm_k_size = gemm_k_iterations * Mma::Shape::kK;
+      gemm_k_size = gemm_k_iterations * Srmma::Shape::kK;
     }
   };
 
   /// Shared memory storage structure
   union SharedStorage {
-    typename Mma::SharedStorage main_loop;
+    typename Srmma::SharedStorage main_loop;
     typename Epilogue::SharedStorage epilogue;
   };
 
@@ -128,18 +113,18 @@ struct Gemm {
   //
 
   CUTLASS_HOST_DEVICE
-  Gemm() { } 
+  Srgemm() { } 
 
   /// Determines whether kernel satisfies alignment
     static Status can_implement(
       cutlass::gemm::GemmCoord const & problem_size,
-      typename Mma::IteratorA::TensorRef ref_A,
-      typename Mma::IteratorB::TensorRef ref_B,
+      typename Srmma::IteratorA::TensorRef ref_A,
+      typename Srmma::IteratorB::TensorRef ref_B,
       typename Epilogue::OutputTileIterator::TensorRef ref_C,
       typename Epilogue::OutputTileIterator::TensorRef ref_D) {
 
-    static int const kAlignmentA = Mma::IteratorA::AccessType::kElements;
-    static int const kAlignmentB = Mma::IteratorB::AccessType::kElements;
+    static int const kAlignmentA = Srmma::IteratorA::AccessType::kElements;
+    static int const kAlignmentB = Srmma::IteratorB::AccessType::kElements;
     static int const kAlignmentC = Epilogue::OutputTileIterator::kElementsPerAccess;
 
     if (!TensorRef_aligned(ref_A, kAlignmentA)) {
@@ -186,13 +171,13 @@ struct Gemm {
 
     // Compute initial location in logical coordinates
     cutlass::MatrixCoord tb_offset_A{
-      threadblock_tile_offset.m() * Mma::Shape::kM,
+      threadblock_tile_offset.m() * Srmma::Shape::kM,
       threadblock_tile_offset.k() * params.gemm_k_size,
     };
 
     cutlass::MatrixCoord tb_offset_B{
       threadblock_tile_offset.k() * params.gemm_k_size,
-      threadblock_tile_offset.n() * Mma::Shape::kN
+      threadblock_tile_offset.n() * Srmma::Shape::kN
     };
 
     // Problem size is a function of threadblock index in the K dimension
@@ -201,20 +186,20 @@ struct Gemm {
       (threadblock_tile_offset.k() + 1) * params.gemm_k_size);
 
     // Compute threadblock-scoped matrix multiply-add
-    int gemm_k_iterations = (problem_size_k - tb_offset_A.column() + Mma::Shape::kK - 1) / Mma::Shape::kK;
+    int gemm_k_iterations = (problem_size_k - tb_offset_A.column() + Srmma::Shape::kK - 1) / Srmma::Shape::kK;
 
     // Compute position within threadblock
     int thread_idx = threadIdx.x;
 
     // Construct iterators to A and B operands
-    typename Mma::IteratorA iterator_A(
+    typename Srmma::IteratorA iterator_A(
       params.params_A,
       params.ref_A.data(),
       {params.problem_size.m(), problem_size_k},
       thread_idx,
       tb_offset_A);
 
-    typename Mma::IteratorB iterator_B(
+    typename Srmma::IteratorB iterator_B(
       params.params_B,
       params.ref_B.data(),
       {problem_size_k, params.problem_size.n()},
@@ -229,15 +214,16 @@ struct Gemm {
     //
 
     // Construct thread-scoped matrix multiply
-    Mma mma(shared_storage.main_loop, thread_idx, warp_idx, lane_idx);
+    Srmma srmma_thrblock_op(shared_storage.main_loop, thread_idx, warp_idx, lane_idx, params.accum_init_val);
 
-    typename Mma::FragmentC accumulators;
+    typename Srmma::FragmentC accumulators;
 
-    accumulators.clear();
+    // need to clear accumulators to infinity for SemiRing Gemm
+    accumulators.clear(params.accum_init_val);
 
     if (!kSplitKSerial || gemm_k_iterations > 0) {
       // Compute threadblock-scoped matrix multiply-add
-      mma(gemm_k_iterations, accumulators, iterator_A, iterator_B, accumulators);
+      srmma_thrblock_op(gemm_k_iterations, accumulators, iterator_A, iterator_B, accumulators);
     }
 
     //
@@ -254,8 +240,8 @@ struct Gemm {
 
     //assume identity swizzle
     MatrixCoord threadblock_offset(
-      threadblock_tile_offset.m() * Mma::Shape::kM,
-      threadblock_tile_offset.n() * Mma::Shape::kN
+      threadblock_tile_offset.m() * Srmma::Shape::kM,
+      threadblock_tile_offset.n() * Srmma::Shape::kN
     );
 
     int block_idx = threadblock_tile_offset.m() + threadblock_tile_offset.n() * params.grid_tiled_shape.m();
@@ -336,8 +322,11 @@ struct Gemm {
   }
 };
 
+
 /////////////////////////////////////////////////////////////////////////////////////////////////
 
 } // namespace kernel
 } // namespace gemm
 } // namespace cutlass
+
+/////////////////////////////////////////////////////////////////////////////////////////////////
